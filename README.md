@@ -207,8 +207,21 @@ Main `jura_link` options:
 | `settings` | `["02", "13", "08", "09", "0A"]` | Machine settings to read: hardness, auto off, units, language, brightness |
 | `machine_type`, `last_error` | – | Optional text sensors |
 
-**Other Jura models.** The component identifies the machine itself and carries the profiles of
-many models. The example YAML, however, is written for the Z10:
+**Machine profiles.** [`jura_profiles_blob.h`](components/jura_link/jura_profiles_blob.h) holds the
+profiles of 75 Jura models in 113 KB of flash.
+
+- **Contents per model:** products and their brew parameters, maintenance labels, alert bits.
+- **Origin:** packed from the J.O.E. app's XML files by `tools/pack_profiles.py` in
+  [harryzz/jura-uart-esphome](https://github.com/harryzz/jura-uart-esphome), so the ESP32 needs no
+  XML parser.
+- **Use:** at the handshake the machine reports its code (the Z10 sends `EF545`) and the firmware
+  picks that profile. It tells the firmware which counters to poll, the product names, and which
+  product codes the `brew` action accepts.
+- **Limit:** the packer drops grind, milk temperature, stroke and the preselections, which is why the
+  card reads the full XML itself.
+
+**Other Jura models.** The component finds the right profile on its own. The example YAML, however,
+is written for the Z10:
 
 - alert bit names
 - product codes in the totals
