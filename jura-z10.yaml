@@ -1,0 +1,849 @@
+substitutions:
+  # Machine setting values from the Z10 machine XML (EF545 <MACHINESETTINGS>), same order as the select options
+  auto_off_values: '"0F", "1E", "213C", "2178", "21B4", "21F0", "22012C", "220168", "2201A4", "2201E0", "22021C"'
+  units_values: '"220000", "220100"'
+  # This Z10's regional language set differs from the XML (which has Italian/Spanish/Portuguese/Russian
+  # on 04/06/07/08); measured on the machine 2026-10-27: 04 Croatian, 06 Romanian, 08 Finnish, 07 Bulgarian.
+  language_values: '"01", "02", "03", "04", "05", "06", "07", "08", "09", "0A", "0B"'
+
+esphome:
+  name: jura-z10
+  # Entity ids become jura_<name>, the same as AlexxIT's Bluetooth integration, so its history carries over
+  friendly_name: Jura
+
+# Speaks the dongle's encrypted @-protocol to the machine on the service port.
+# Based on github://harryzz/jura-uart-esphome@23c76fff5361cdc38e3fb8707aeb32a00d69fefc (tested
+# upstream on an S8 / EF536), patched for the Z10: @TR:37 after the handshake, re-handshake on @t0,
+# strict reply matching with retries, machine settings, brew action.
+external_components:
+  - source: github://andrei-marinache/jura-wifi-dongle-esphome@main
+    components: [jura_link]
+  # Or from a local clone, with components/ copied next to this file:
+  # - source:
+  #     type: local
+  #     path: components
+  #   components: [jura_link]
+
+# Original Jura WiFi Connect dongle (TOP-tronic TT237XX, ESP32-WROOM-32D).
+# Pin mapping from github.com/Sebbeben/Jura-Smart-Connect-Wifi-pcb-3d-model.
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+# UART0 (GPIO1/3) is the programming header; the machine is on GPIO16/17
+logger:
+
+api:
+  encryption:
+    key: !secret api_key
+  # The API is closed on purpose while the machine is off (see interval below): no reboot for that.
+  reboot_timeout: 0s
+  # esphome.jura_z10_brew: one 16-byte @TP: recipe as 32 hex chars, built by jura-z10-card.
+  actions:
+    - action: brew
+      variables:
+        recipe: string
+      then:
+        - lambda: 'id(coffee_link).brew_recipe(recipe);'
+
+# Never sleeps (no durations). It only makes the device report deep sleep, so HA keeps the
+# entities available with their last values after a graceful disconnect.
+deep_sleep:
+
+# The dongle loses power ~5 min after the machine is switched off (measured 2026-10-27).
+# Switch-off sets status bit 47 "SwitchOff Delay active" (measured: power cut 5 min 3 s later).
+# Keep reporting for 4 min of it, then say goodbye to HA (graceful disconnect) before the power
+# goes. Switched on again in time: reboot.
+interval:
+  # Power-cut detection (optional, needs the 9k1 / 7k5 divider on GPIO34, see README section 4;
+  # without it delete this block and the supply_5v sensor). Mains loss while the machine is on:
+  # the 5 V sags before the ESP dies. Say goodbye to HA (graceful disconnect) in that window, so
+  # the entities stay available. Arms only after 10 s of a healthy supply.
+  - interval: 1ms
+    then:
+      - lambda: |-
+          static bool armed = false, closed = false;
+          static uint32_t good_since = 0;
+          static uint8_t low = 0;
+          const float v = id(supply_5v).sample() * 2.2133f;   // same divider factor as the sensor filter
+          if (std::isnan(v)) return;
+          if (v >= 4.8f) {
+            low = 0;
+            if (!good_since) good_since = millis();
+            if (!armed && millis() - good_since >= 10000) { armed = true; ESP_LOGI("jura", "power-fail detection armed (%.2f V)", v); }
+            if (closed && millis() - good_since >= 2000) { ESP_LOGW("jura", "supply is back, rebooting"); App.safe_reboot(); }
+            return;
+          }
+          good_since = 0;
+          if (!armed || closed) return;
+          if (v < 4.6f && ++low >= 2) {
+            api::global_api_server->on_shutdown();
+            closed = true;
+            ESP_LOGW("jura", "supply dropped to %.2f V: graceful disconnect", v);
+          }
+  - interval: 1s
+    then:
+      - lambda: |-
+          static uint32_t off_since = 0;
+          static bool api_closed = false;
+          const bool off = id(coffee_link).alert(47).value_or(false);
+          if (!off) {
+            off_since = 0;
+            if (api_closed) { ESP_LOGW("jura", "machine on again, rebooting"); App.safe_reboot(); }
+            return;
+          }
+          if (api_closed) return;
+          if (!off_since) off_since = millis();
+          if (millis() - off_since >= 240000) {
+            ESP_LOGW("jura", "machine off: graceful disconnect before the power goes");
+            api::global_api_server->on_shutdown();
+            api_closed = true;
+          }
+
+ota:
+  - platform: esphome
+    encryption:
+
+wifi:
+  networks:
+    - ssid: !secret wifi_ssid
+      password: !secret wifi_password
+      priority: 0
+  fast_connect: false
+  power_save_mode: NONE
+  reboot_timeout: 60min
+
+web_server:
+
+status_led:
+  pin:
+    number: GPIO2   # LED to GND through R1, active high
+    ignore_strapping_warning: true
+
+# Service port: 9600 8N1, both lines 5 V on the Z10. The dongle shifts them:
+# GPIO17 drives a MOSFET shifter (gate on 3V3, 3V3 pull-up), GPIO16 reads
+# through a divider. Neither inverts. Same pins as ESP-AT's default UART.
+uart:
+  id: jura_uart
+  tx_pin: GPIO17   # -> machine RX (socket pos 4)
+  rx_pin: GPIO16   # <- machine TX (socket pos 2)
+  baud_rate: 9600
+  data_bits: 8
+  parity: NONE
+  stop_bits: 1
+
+jura_link:
+  id: coffee_link
+  uart_id: jura_uart
+  update_interval: 60s
+  auto_poll: true
+  # Brewing from HA: the brew action above, called by card/jura-z10-card.js
+  allow_brew: true
+  # allow_lock: true     # panel lock switch
+  response_timeout: 3s
+  # Machine settings (P_Argument): hardness, auto off, units, language, display brightness
+  settings: ["02", "13", "08", "09", "0A"]
+  machine_type:
+    name: "Machine Type"
+  last_error:
+    name: "Last Error"
+
+# Machine settings. Writes go through write_setting() (panel lock + checksum + read-back).
+number:
+  - platform: template
+    name: "Water Hardness"
+    icon: mdi:water-opacity
+    unit_of_measurement: "°dH"
+    min_value: 1
+    max_value: 30
+    step: 1
+    mode: box
+    entity_category: config
+    update_interval: 5s
+    lambda: |-
+      auto v = id(coffee_link).setting("02");
+      if (!v) return {};
+      return (float) (strtol(v->c_str(), nullptr, 16) & 0xFF);
+    set_action:
+      - lambda: |-
+          char b[3]; snprintf(b, sizeof(b), "%02X", (int) x);
+          id(coffee_link).write_setting("02", b);
+  - platform: template
+    name: "Display Brightness"
+    icon: mdi:brightness-6
+    unit_of_measurement: "%"
+    min_value: 10
+    max_value: 100
+    step: 10
+    entity_category: config
+    update_interval: 5s
+    lambda: |-
+      auto v = id(coffee_link).setting("0A");
+      if (!v) return {};
+      return 10.0f * strtol(v->c_str(), nullptr, 16);
+    set_action:
+      - lambda: |-
+          char b[3]; snprintf(b, sizeof(b), "%02X", (int) (x / 10));
+          id(coffee_link).write_setting("0A", b);
+
+select:
+  - platform: template
+    id: auto_off
+    name: "Auto Off"
+    icon: mdi:timer-off-outline
+    entity_category: config
+    options: ["15 min", "30 min", "1 h", "2 h", "3 h", "4 h", "5 h", "6 h", "7 h", "8 h", "9 h"]
+    update_interval: 5s
+    lambda: |-
+      auto i = id(coffee_link).setting_index("13", {${auto_off_values}});
+      if (!i) return {};
+      return id(auto_off).at(*i);
+    set_action:
+      - lambda: |-
+          static const std::vector<std::string> v{${auto_off_values}};
+          auto i = id(auto_off).index_of(x);
+          if (i) id(coffee_link).write_setting("13", v[*i]);
+  - platform: template
+    id: units
+    name: "Units"
+    icon: mdi:scale-balance
+    entity_category: config
+    options: ["ml", "oz"]
+    update_interval: 5s
+    lambda: |-
+      auto i = id(coffee_link).setting_index("08", {${units_values}});
+      if (!i) return {};
+      return id(units).at(*i);
+    set_action:
+      - lambda: |-
+          static const std::vector<std::string> v{${units_values}};
+          auto i = id(units).index_of(x);
+          if (i) id(coffee_link).write_setting("08", v[*i]);
+  - platform: template
+    id: language
+    name: "Language"
+    icon: mdi:translate
+    entity_category: config
+    options: ["German", "English", "French", "Croatian", "Dutch", "Romanian", "Bulgarian", "Finnish", "Swedish", "Polish", "Estonian"]
+    update_interval: 5s
+    lambda: |-
+      auto i = id(coffee_link).setting_index("09", {${language_values}});
+      if (!i) return {};
+      return id(language).at(*i);
+    set_action:
+      - lambda: |-
+          static const std::vector<std::string> v{${language_values}};
+          auto i = id(language).index_of(x);
+          if (i) id(coffee_link).write_setting("09", v[*i]);
+
+# Debug: send one @-command by hand. Read commands only; never WE:
+text:
+  - platform: template
+    name: "AT Command"
+    entity_category: diagnostic
+    mode: text
+    optimistic: true
+    min_length: 0
+    max_length: 40
+    on_value:
+      - lambda: 'if (!x.empty()) id(coffee_link).query_at(x);'
+  # Debug: hex answer to the machine's @T2 challenge, used from the next handshake
+  - platform: template
+    name: "T2 Reply"
+    entity_category: diagnostic
+    mode: text
+    optimistic: true
+    min_length: 2
+    max_length: 32
+    initial_value: "818000"
+    on_value:
+      - lambda: 'id(coffee_link).set_t2_reply(x);'
+
+# Native entities for everything the machine reports. Names, units and state classes match the
+# former Bluetooth integration (device "Jura"), so these entities take over its entity_ids and history.
+binary_sensor:
+  - platform: template
+    name: "Connection"
+    device_class: connectivity
+    lambda: return id(coffee_link).link_up();
+  # Machine status bits (EF545 profile), MSB-first in @TF
+  - platform: template
+    name: "Alarm - Insert Drip Tray"
+    device_class: problem
+    lambda: return id(coffee_link).alert(0);   # insert tray
+  - platform: template
+    name: "Alarm - Fill Water Tank"
+    device_class: problem
+    lambda: return id(coffee_link).alert(1);   # fill water
+  - platform: template
+    name: "Alarm - Empty Coffee Grounds"
+    device_class: problem
+    lambda: return id(coffee_link).alert(2);   # empty grounds
+  - platform: template
+    name: "Alarm - Empty Drip Tray"
+    device_class: problem
+    lambda: return id(coffee_link).alert(3);   # empty tray
+  - platform: template
+    name: "Alarm - Insert Coffee Bin"
+    device_class: problem
+    lambda: return id(coffee_link).alert(4);   # insert coffee bin
+  - platform: template
+    name: "Alarm - Outlet Missing"
+    device_class: problem
+    lambda: return id(coffee_link).alert(5);   # outlet missing
+  - platform: template
+    name: "Alarm - Rear Service Cover Missing"
+    device_class: problem
+    lambda: return id(coffee_link).alert(6);   # rear cover missing
+  - platform: template
+    name: "Alarm - Milk Container Empty"
+    device_class: problem
+    lambda: return id(coffee_link).alert(7);   # milk alert
+  - platform: template
+    name: "Alarm - Fill System"
+    device_class: problem
+    lambda: return id(coffee_link).alert(8);   # fill system
+  - platform: template
+    name: "Info - System Is Filling"
+    lambda: return id(coffee_link).alert(9);   # system filling
+  - platform: template
+    name: "Alarm - Fill Beans Container"
+    device_class: problem
+    lambda: return id(coffee_link).alert(10);   # no beans
+  - platform: template
+    name: "Info - Welcome"
+    lambda: return id(coffee_link).alert(11);   # welcome
+  - platform: template
+    name: "Info - Heating Up"
+    lambda: return id(coffee_link).alert(12);   # heating up
+  - platform: template
+    name: "Info - Coffee Ready"
+    lambda: return id(coffee_link).alert(13);   # coffee ready
+  - platform: template
+    name: "Alarm - Milk Container Empty (milk sensor)"
+    device_class: problem
+    lambda: return id(coffee_link).alert(14);   # no milk (milk sensor)
+  - platform: template
+    name: "Alarm - error milk (milk sensor)"
+    device_class: problem
+    lambda: return id(coffee_link).alert(15);   # error milk (milk sensor)
+  - platform: template
+    name: "Alarm - Milk Cooler Connection Lost"
+    device_class: problem
+    lambda: return id(coffee_link).alert(16);   # no signal (milk sensor)
+  - platform: template
+    name: "Info - Machine in operation"
+    lambda: return id(coffee_link).alert(17);   # please wait
+  - platform: template
+    name: "Info - Coffee Rinsing"
+    lambda: return id(coffee_link).alert(18);   # coffee rinsing
+  - platform: template
+    name: "Alarm - Ventilation Slots Are Closed"
+    device_class: problem
+    lambda: return id(coffee_link).alert(19);   # ventilation closed
+  - platform: template
+    name: "Alarm - Close Powder Cover"
+    device_class: problem
+    lambda: return id(coffee_link).alert(20);   # close powder cover
+  - platform: template
+    name: "Alarm - Add Ground Coffee"
+    device_class: problem
+    lambda: return id(coffee_link).alert(21);   # fill powder
+  - platform: template
+    name: "Info - System Emptying"
+    lambda: return id(coffee_link).alert(22);   # system emptying
+  - platform: template
+    name: "Alarm - Not Enough Ground Coffee"
+    device_class: problem
+    lambda: return id(coffee_link).alert(23);   # not enough powder
+  - platform: template
+    name: "Alarm - Remove Water Tank"
+    device_class: problem
+    lambda: return id(coffee_link).alert(24);   # remove water tank
+  - platform: template
+    name: "Alarm - Rinse Needed"
+    device_class: problem
+    lambda: return id(coffee_link).alert(25);   # press rinse
+  - platform: template
+    name: "Info - Shutting Down"
+    lambda: return id(coffee_link).alert(26);   # goodbye
+  - platform: template
+    name: "Alarm - Accessory Alert"
+    device_class: problem
+    lambda: return id(coffee_link).alert(27);   # periphery alert
+  - platform: template
+    name: "Info - Preparing product with ground coffee"
+    lambda: return id(coffee_link).alert(28);   # powder product
+  - platform: template
+    name: "Info - Machine in programming mode"
+    lambda: return id(coffee_link).alert(29);   # program-mode status
+  - platform: template
+    name: "Alarm - error status"
+    device_class: problem
+    lambda: return id(coffee_link).alert(30);   # error status
+  - platform: template
+    name: "Info - Enjoy Product"
+    lambda: return id(coffee_link).alert(31);   # enjoy product
+  - platform: template
+    name: "Alarm - Filter Change Needed"
+    device_class: problem
+    lambda: return id(coffee_link).alert(32);   # filter alert
+  - platform: template
+    name: "Alarm - Descaling Needed"
+    device_class: problem
+    lambda: return id(coffee_link).alert(33);   # decalc alert
+  - platform: template
+    name: "Alarm - Machine Cleaning Needed"
+    device_class: problem
+    lambda: return id(coffee_link).alert(34);   # cleaning alert
+  - platform: template
+    name: "Alarm - Milk System Rinse Needed"
+    device_class: problem
+    lambda: return id(coffee_link).alert(35);   # cappu rinse alert
+  - platform: template
+    name: "Info - Energy Save Mode"
+    lambda: return id(coffee_link).alert(36);   # energy safe
+  - platform: template
+    name: "Info - Filter Installed"
+    lambda: return id(coffee_link).alert(37);   # active RF filter
+  - platform: template
+    name: "Info - Remote Screen Active"
+    lambda: return id(coffee_link).alert(38);   # RemoteScreen
+  - platform: template
+    name: "Info - Buttons Are Locked"
+    lambda: return id(coffee_link).alert(39);   # LockedKeys
+  - platform: template
+    name: "Alarm - Close Tab"
+    device_class: problem
+    lambda: return id(coffee_link).alert(40);   # close tab
+  - platform: template
+    name: "Alarm - Milk System Cleaning Needed"
+    device_class: problem
+    lambda: return id(coffee_link).alert(41);   # cappu clean alert
+  - platform: template
+    name: "Alarm - Info - Milk System Cleaning Needed"
+    device_class: problem
+    lambda: return id(coffee_link).alert(42);   # Info - cappu clean alert
+  - platform: template
+    name: "Alarm - Info - Machine Cleaning Needed"
+    device_class: problem
+    lambda: return id(coffee_link).alert(43);   # Info - coffee clean alert
+  - platform: template
+    name: "Alarm - Info - Descaling Needed"
+    device_class: problem
+    lambda: return id(coffee_link).alert(44);   # Info - decalc alert
+  - platform: template
+    name: "Alarm - Info - Filter Change Needed"
+    device_class: problem
+    lambda: return id(coffee_link).alert(45);   # Info - filter used up alert
+  - platform: template
+    name: "Info - Steam Ready"
+    lambda: return id(coffee_link).alert(46);   # steam ready
+  - platform: template
+    name: "Info - Machine is powering off"
+    lambda: return id(coffee_link).alert(47);   # SwitchOff Delay active
+  - platform: template
+    name: "Alarm - Close Front Flap"
+    device_class: problem
+    lambda: return id(coffee_link).alert(48);   # close front cover
+  - platform: template
+    name: "Alarm - Left Bean Empty"
+    device_class: problem
+    lambda: return id(coffee_link).alert(49);   # left bean alert
+  - platform: template
+    name: "Alarm - Right Bean Container Empty"
+    device_class: problem
+    lambda: return id(coffee_link).alert(50);   # right bean alert
+  - platform: template
+    name: "Alarm - Empty Grounds RTC"
+    device_class: problem
+    lambda: return id(coffee_link).alert(53);   # empty grounds RTC
+  - platform: template
+    name: "Info - ML OZ status"
+    lambda: return id(coffee_link).alert(54);   # ML/OZ status
+
+sensor:
+  - platform: wifi_signal
+    name: "WiFi Signal"
+  # Machine 5 V, through 9k1 / 7k5 into GPIO34 (WROOM pin 6, ADC1: works with WiFi on).
+  # Optional: delete together with the power-cut detection interval if the divider is not fitted.
+  - platform: adc
+    id: supply_5v
+    name: "Supply Voltage"
+    pin: GPIO34
+    attenuation: 12db
+    accuracy_decimals: 2
+    entity_category: diagnostic
+    update_interval: 5s
+    filters:
+      - multiply: 2.2133   # (9k1 + 7k5) / 7k5
+  # Per-type totals, same product grouping as the Bluetooth integration (inactive doubles included)
+  - platform: template
+    name: "Total Products"
+    icon: mdi:coffee
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product(0x00);
+  - platform: template
+    name: "Total Coffee Only"
+    icon: mdi:coffee
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product_sum({0x02, 0x03, 0x0C, 0x0F, 0x28, 0x29, 0x30, 0x31, 0x36, 0x38, 0x39});
+  - platform: template
+    name: "Total Coffee With Milk"
+    icon: mdi:coffee
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product_sum({0x04, 0x05, 0x06, 0x07, 0x2B, 0x2E});
+  - platform: template
+    name: "Total Coffee Including Milk Coffee"
+    icon: mdi:coffee
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product_sum({0x02, 0x03, 0x0C, 0x0F, 0x28, 0x29, 0x30, 0x31, 0x36, 0x38, 0x39, 0x04, 0x05, 0x06, 0x07, 0x2B, 0x2E});
+  - platform: template
+    name: "Total Milk Only"
+    icon: mdi:coffee
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product_sum({0x08, 0x0A});
+  - platform: template
+    name: "Total Water Only"
+    icon: mdi:coffee
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product_sum({0x0D, 0x2D});
+  - platform: template
+    name: "Espresso"
+    icon: mdi:coffee-outline
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product(0x02);
+  - platform: template
+    name: "Coffee"
+    icon: mdi:coffee-outline
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product(0x03);
+  - platform: template
+    name: "Cappuccino"
+    icon: mdi:coffee-outline
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product(0x04);
+  - platform: template
+    name: "Milkcoffee"
+    icon: mdi:coffee-outline
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product(0x05);
+  - platform: template
+    name: "Espresso Macchiato"
+    icon: mdi:coffee-outline
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product(0x06);
+  - platform: template
+    name: "Latte Macchiato"
+    icon: mdi:coffee-outline
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product(0x07);
+  - platform: template
+    name: "Milk Foam"
+    icon: mdi:coffee-outline
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product(0x08);
+  - platform: template
+    name: "Milk"
+    icon: mdi:coffee-outline
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product(0x0A);
+  - platform: template
+    name: "Coffee Pot"
+    icon: mdi:coffee-outline
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product(0x0C);
+  - platform: template
+    name: "Hotwater Portion"
+    icon: mdi:coffee-outline
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product(0x0D);
+  - platform: template
+    name: "Cafe Barista"
+    icon: mdi:coffee-outline
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product(0x28);
+  - platform: template
+    name: "Barista Lungo"
+    icon: mdi:coffee-outline
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product(0x29);
+  - platform: template
+    name: "Cortado"
+    icon: mdi:coffee-outline
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product(0x2B);
+  - platform: template
+    name: "Hotwater Portion (Green tea)"
+    icon: mdi:coffee-outline
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product(0x2D);
+  - platform: template
+    name: "Flat White"
+    icon: mdi:coffee-outline
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product(0x2E);
+  - platform: template
+    name: "Espresso Doppio"
+    icon: mdi:coffee-outline
+    unit_of_measurement: "products"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 10s
+    lambda: return id(coffee_link).product(0x30);
+  - platform: template
+    name: "MNT Cleanings"
+    icon: mdi:wrench
+    unit_of_measurement: "times"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: return id(coffee_link).maint_counter(0);
+  - platform: template
+    name: "MNT Filter Changes"
+    icon: mdi:wrench
+    unit_of_measurement: "times"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: return id(coffee_link).maint_counter(1);
+  - platform: template
+    name: "MNT Descalings"
+    icon: mdi:wrench
+    unit_of_measurement: "times"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: return id(coffee_link).maint_counter(2);
+  - platform: template
+    name: "MNT Milk Rinses"
+    icon: mdi:wrench
+    unit_of_measurement: "times"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: return id(coffee_link).maint_counter(3);
+  - platform: template
+    name: "MNT Coffee Rinses"
+    icon: mdi:wrench
+    unit_of_measurement: "times"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: return id(coffee_link).maint_counter(4);
+  - platform: template
+    name: "MNT Milk Cleanings"
+    icon: mdi:wrench
+    unit_of_measurement: "times"
+    state_class: total_increasing
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: return id(coffee_link).maint_counter(5);
+  # state_class total: kept from the Bluetooth integration so its statistics continue
+  - platform: template
+    name: "MNT % Cleaning"
+    icon: mdi:percent
+    unit_of_measurement: "%"
+    state_class: total
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: return id(coffee_link).maint_pct(0);
+  - platform: template
+    name: "MNT % Filter Change"
+    icon: mdi:percent
+    unit_of_measurement: "%"
+    state_class: total
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: return id(coffee_link).maint_pct(1);
+  - platform: template
+    name: "MNT % Decalc"
+    icon: mdi:percent
+    unit_of_measurement: "%"
+    state_class: total
+    accuracy_decimals: 0
+    update_interval: 30s
+    lambda: return id(coffee_link).maint_pct(2);
+  - platform: template
+    name: "Progress"
+    icon: mdi:progress-clock
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+    update_interval: 1s
+    lambda: |-
+      auto v = id(coffee_link).entity_value("progress");
+      if (!v) return {};
+      return (float) atof(v->c_str());
+
+text_sensor:
+  - platform: template
+    name: "Status"
+    icon: mdi:coffee-maker
+    update_interval: 1s
+    lambda: |-
+      if (id(coffee_link).alert(47).value_or(false)) return {"off"};   // SwitchOff Delay active
+      return id(coffee_link).entity_value("status");
+  # ok / alert, as the Bluetooth integration's "Alerts" sensor
+  - platform: template
+    name: "Alerts"
+    icon: mdi:alert
+    update_interval: 2s
+    lambda: |-
+      auto v = id(coffee_link).entity_value("active_alerts");
+      if (!v) return {};
+      return {*v == "none" ? "ok" : "alert"};
+  - platform: template
+    name: "Active Alerts"
+    icon: mdi:alert-circle-outline
+    update_interval: 2s
+    lambda: return id(coffee_link).entity_value("active_alerts");
+  - platform: template
+    name: "Progress State"
+    icon: mdi:coffee-maker-outline
+    update_interval: 1s
+    lambda: return id(coffee_link).entity_value("progress_state");
+  - platform: template
+    name: "Progress Product"
+    icon: mdi:coffee-outline
+    update_interval: 1s
+    lambda: return id(coffee_link).entity_value("progress_product");
+
+button:
+  - platform: restart
+    name: "Restart"
+  # Maintenance processes (<PROCESSES> in the Z10 XML; coffee rinse @TG:22 is what the
+  # Bluetooth automation sent). The machine then guides the process on its display.
+  - platform: template
+    name: "Coffee Rinse"
+    icon: mdi:coffee-maker-outline
+    on_press:
+      - lambda: 'id(coffee_link).query_at("@TG:22");'
+  - platform: template
+    name: "Cappu Rinse"
+    icon: mdi:cup-water
+    on_press:
+      - lambda: 'id(coffee_link).query_at("@TG:23");'
+  - platform: template
+    name: "Cappu Clean"
+    icon: mdi:spray-bottle
+    on_press:
+      - lambda: 'id(coffee_link).query_at("@TG:21");'
+  - platform: template
+    name: "Cleaning"
+    icon: mdi:dishwasher
+    on_press:
+      - lambda: 'id(coffee_link).query_at("@TG:24");'
+  - platform: template
+    name: "Decalc"
+    icon: mdi:water-off
+    on_press:
+      - lambda: 'id(coffee_link).query_at("@TG:25");'
+  - platform: template
+    name: "Filter Change"
+    icon: mdi:filter-cog
+    on_press:
+      - lambda: 'id(coffee_link).query_at("@TG:26");'
+  - platform: template
+    name: "Empty System"
+    icon: mdi:water-minus
+    on_press:
+      - lambda: 'id(coffee_link).query_at("@TG:28");'
+  # Power off doubles as "press OK" on a prompt; @TG:03 cancels e.g. a running power-off.
+  # Left out on purpose: @TG:30/31 (install/disconnect accessory) and @TG:32 (factory reset, no confirmation).
+  - platform: template
+    name: "OK or Power Off"
+    icon: mdi:power
+    on_press:
+      - lambda: 'id(coffee_link).query_at("@TG:04");'
+  - platform: template
+    name: "Cancel"
+    icon: mdi:cancel
+    on_press:
+      - lambda: 'id(coffee_link).query_at("@TG:03");'
+  # Confirm the step the machine is waiting for (e.g. "Press Rinse"), or cancel the running step
+  - platform: template
+    name: "Confirm Step"
+    icon: mdi:check-circle-outline
+    on_press:
+      - lambda: 'id(coffee_link).query_at("@TG:10");'
+  - platform: template
+    name: "Cancel Step"
+    icon: mdi:close-circle-outline
+    on_press:
+      - lambda: 'id(coffee_link).query_at("@TG:FF");'
+  - platform: template
+    name: "Refresh"
+    icon: mdi:refresh
+    entity_category: diagnostic
+    on_press:
+      - lambda: 'id(coffee_link).poll_stats();'
+  # Debug: the boot handshake runs before WiFi is up, so it never reaches the web log
+  - platform: template
+    name: "Handshake"
+    entity_category: diagnostic
+    on_press:
+      - lambda: 'id(coffee_link).start_handshake();'

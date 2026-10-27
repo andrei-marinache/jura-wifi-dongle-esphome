@@ -1,0 +1,5 @@
+# Never commit firmware images: a dongle dump contains your WiFi password
+*.bin
+secrets.yaml
+.esphome/
+node_modules/
