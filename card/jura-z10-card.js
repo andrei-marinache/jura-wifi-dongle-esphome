@@ -82,6 +82,22 @@ function buildRecipe(product, values, changed, pre) {
   return [...b].map((x) => x.toString(16).padStart(2, '0')).join('').toUpperCase();
 }
 
+// navigator.clipboard only exists in a secure context (https), and some WebViews refuse it;
+// HA over plain http (or the Companion app) then needs the old execCommand path.
+function copyText(text) {
+  const legacy = () => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove();
+    return ok ? Promise.resolve() : Promise.reject(new Error('copy failed'));
+  };
+  return navigator.clipboard && window.isSecureContext ? navigator.clipboard.writeText(text).catch(legacy) : legacy();
+}
+
 class JuraZ10Card extends HTMLElement {
   setConfig(config) {
     this._config = {
@@ -158,7 +174,7 @@ class JuraZ10Card extends HTMLElement {
           ${rows}${pre}
         </div>
         <button id="brew">Brew</button>
-        <div class="recipe">@TP:${buildRecipe(p, this._values, this._changed, this._pre)}</div>
+        <div class="recipe" id="recipe" title="Copy the recipe">@TP:<span id="hex">${buildRecipe(p, this._values, this._changed, this._pre)}</span><ha-icon icon="mdi:content-copy"></ha-icon></div>
         <div class="msg">${esc(this._message)}</div>`;
     }
     root.innerHTML = `
@@ -177,7 +193,9 @@ class JuraZ10Card extends HTMLElement {
         button { margin-top: 16px; width: 100%; padding: 10px; font: inherit; font-weight: 500; border: 0; border-radius: 8px;
                  background: var(--primary-color); color: var(--text-primary-color, #fff); cursor: pointer; }
         button:disabled { opacity: 0.4; cursor: default; }
-        .recipe { margin-top: 8px; font-family: monospace; font-size: 0.8em; color: var(--secondary-text-color); overflow-wrap: anywhere; }
+        .recipe { margin-top: 8px; display: flex; align-items: center; gap: 6px; cursor: pointer; font-family: monospace; font-size: 0.8em; color: var(--secondary-text-color); }
+        .recipe span { min-width: 0; overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; }
+        .recipe ha-icon { flex: none; --mdc-icon-size: 16px; }
         .msg { margin-top: 4px; color: var(--secondary-text-color); }
       </style>
       <ha-card>
@@ -194,7 +212,9 @@ class JuraZ10Card extends HTMLElement {
     if (!product) return;
     product.addEventListener('change', (e) => this._select(Number(e.target.value)));
     root.getElementById('pre')?.addEventListener('change', (e) => { this._pre = e.target.value; this._message = ''; this._render(); });
-    const recipe = root.querySelector('.recipe');
+    const hex = root.getElementById('hex');
+    const msg = root.querySelector('.msg');
+    const say = (t) => { this._message = t; msg.textContent = t; };
     root.querySelectorAll('[data-arg]').forEach((el) => {
       el.addEventListener('input', () => {
         const arg = el.dataset.arg;
@@ -205,16 +225,18 @@ class JuraZ10Card extends HTMLElement {
           const q = this._product.params.find((x) => x.arg === arg);
           out.textContent = `${el.value} ${UNITS[q.tag] || ''}`;
         }
-        recipe.textContent = `@TP:${buildRecipe(this._product, this._values, this._changed, this._pre)}`;
+        hex.textContent = buildRecipe(this._product, this._values, this._changed, this._pre);
       });
     });
+    root.getElementById('recipe').addEventListener('click', () => {
+      copyText(hex.textContent).then(() => say('Recipe copied')).catch(() => say('Copy failed: select the code and copy it by hand'));
+    });
     root.getElementById('brew').addEventListener('click', () => {
-      const hex = buildRecipe(this._product, this._values, this._changed, this._pre);
+      const recipe = buildRecipe(this._product, this._values, this._changed, this._pre);
       const [domain, service] = this._config.action.split('.');
-      const msg = root.querySelector('.msg');
-      this._hass.callService(domain, service, { recipe: hex })
-        .then(() => { this._message = `Sent ${this._product.name}`; msg.textContent = this._message; })
-        .catch((e) => { this._message = `Failed: ${e.message || e}`; msg.textContent = this._message; });
+      this._hass.callService(domain, service, { recipe })
+        .then(() => say(`Sent ${this._product.name}`))
+        .catch((e) => say(`Failed: ${e.message || e}`));
     });
   }
 }

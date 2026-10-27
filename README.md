@@ -269,7 +269,7 @@ entities take over the same entity ids and their history.
 
 - Pick a product, and only that product's parameters show up, set to its factory values.
 - *Option* offers the preselections that product supports: Double, Extra shot, Cold brew, Ground coffee.
-- *Brew* sends one `@TP:` recipe to the dongle. The line under the button shows exactly what will be sent.
+- *Brew* sends one `@TP:` recipe to the dongle. The line under the button shows exactly what will be sent; tap it to copy the recipe.
 
 Parameters marked **test** are not confirmed on a real machine yet:
 
