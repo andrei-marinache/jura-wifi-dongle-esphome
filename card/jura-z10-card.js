@@ -144,7 +144,7 @@ class JuraZ10Card extends HTMLElement {
     const el = root.getElementById('status');
     if (el) el.textContent = this._online() ? (s ? s.state : '?') : 'offline';
     const btn = root.getElementById('brew');
-    if (btn) btn.disabled = !this._online();
+    if (btn) btn.disabled = !this._online() || (!!s && s.state === 'off');   // off = switch-off delay running
   }
 
   _render() {
