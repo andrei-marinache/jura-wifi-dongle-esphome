@@ -22,5 +22,5 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 Third-party files keep their own terms:
-- card/EF545.xml: Jura machine profile, from AlexxIT/Jura (MIT, Copyright (c) 2023 AlexxIT).
+- profiles/: Jura machine profiles, from AlexxIT/Jura (MIT, Copyright (c) 2023 AlexxIT).
 - docs/img/dongle-pinout.jpeg: from Sebbeben/Jura-Smart-Connect-Wifi-pcb-3d-model.

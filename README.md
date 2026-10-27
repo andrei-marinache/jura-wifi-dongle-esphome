@@ -33,8 +33,12 @@ TOP-tronic **TT237XX-PRD-10 V02** dongle (ESP32-WROOM-32D, original firmware TT2
 | [`components/jura_link`](components/jura_link) | ESPHome external component: the encrypted UART protocol |
 | [`jura-z10.yaml`](jura-z10.yaml) | ESPHome configuration for the Z10 with all the entities |
 | [`card/jura-z10-card.js`](card/jura-z10-card.js) | Home Assistant dashboard card for brewing |
-| [`card/EF545.xml`](card/EF545.xml) | Z10 machine profile the card reads its products from |
-| [`tests/`](tests) | Host tests for the protocol matcher and the card's recipe builder |
+| [`profiles/`](profiles) | J.O.E. XML profiles of 75 Jura models, plus `JOE_MACHINES.TXT` |
+| [`tools/pack_profiles.py`](tools/pack_profiles.py) | Packs `profiles/` into the component's `jura_profiles_blob.h` |
+| [`docs/PROTOCOL-Z10.md`](docs/PROTOCOL-Z10.md) | The protocol as this firmware uses it on a Z10 |
+| [`docs/HARDWARE.md`](docs/HARDWARE.md) | Dongle and service-socket wiring |
+| [`docs/upstream/`](docs/upstream) | The upstream component's protocol notes and README |
+| [`tests/`](tests) | Host tests for the protocol engine, the profiles and the card's recipe builder |
 
 ---
 
@@ -51,7 +55,8 @@ The programming pads are on the back of the board:
 
 ![Dongle programming pads](docs/img/dongle-pinout.jpeg)
 
-*Photo: [Sebbeben/Jura-Smart-Connect-Wifi-pcb-3d-model](https://github.com/Sebbeben/Jura-Smart-Connect-Wifi-pcb-3d-model).*
+*Photo: [Sebbeben/Jura-Smart-Connect-Wifi-pcb-3d-model](https://github.com/Sebbeben/Jura-Smart-Connect-Wifi-pcb-3d-model).
+The rest of the circuit is in [docs/HARDWARE.md](docs/HARDWARE.md).*
 
 | USB-UART adapter | Dongle pad |
 |---|---|
@@ -211,9 +216,16 @@ Main `jura_link` options:
 profiles of 75 Jura models in 113 KB of flash.
 
 - **Contents per model:** products and their brew parameters, maintenance labels, alert bits.
-- **Origin:** packed from the J.O.E. app's XML files by `tools/pack_profiles.py` in
-  [harryzz/jura-uart-esphome](https://github.com/harryzz/jura-uart-esphome), so the ESP32 needs no
-  XML parser.
+- **Origin:** packed from the XML files in [`profiles/`](profiles) by
+  [`tools/pack_profiles.py`](tools/pack_profiles.py), so the ESP32 needs no XML parser. To rebuild it
+  after changing a profile:
+
+  ```
+  python3 tools/pack_profiles.py --xml-dir profiles/xml --machines profiles/JOE_MACHINES.TXT \
+      --header components/jura_link/jura_profiles_blob.h
+  ```
+
+  Run on the files as shipped, this reproduces the current blob byte for byte.
 - **Use:** at the handshake the machine reports its code (the Z10 sends `EF545`) and the firmware
   picks that profile. It tells the firmware which counters to poll, the product names, and which
   product codes the `brew` action accepts.
@@ -228,8 +240,7 @@ is written for the Z10:
 - setting values
 - language codes: measured on one Z10; a regional variant may have other languages on the same codes
 
-For another model, adapt these from that model's XML profile (`EFxxx`), for example from
-[AlexxIT/Jura](https://github.com/AlexxIT/Jura)'s `resources.zip`. Expect to debug.
+For another model, adapt these from that model's profile in `profiles/xml/<EF code>/`. Expect to debug.
 
 **Coming from AlexxIT's Bluetooth integration?** The device is named `Jura` and the entity names,
 units and state classes match that integration. Remove the old Bluetooth device first, and the new
@@ -240,7 +251,8 @@ entities take over the same entity ids and their history.
 ### Install
 
 1. Copy [`card/jura-z10-card.js`](card/jura-z10-card.js) to `/config/www/jura-z10-card.js`.
-2. Copy [`card/EF545.xml`](card/EF545.xml) to `/config/www/jura/EF545.xml`.
+2. Copy [`profiles/xml/EF545/1.4.xml`](profiles/xml/EF545/1.4.xml) to `/config/www/jura/EF545.xml`.
+   On another model, copy its own profile and set the card's `profile:` option to it.
 3. *Settings → Dashboards → ⋮ → Resources → Add resource*:
    - URL `/local/jura-z10-card.js?v=1`
    - type *JavaScript module*
@@ -314,7 +326,11 @@ In short:
   - Counters (`@TR:32`, `@TG:43`, `@TG:C0`) and settings (`@TM`) are polled.
   - A request that collides with a push is sent again.
 
-The full protocol is documented in [makefu/jura-connect `docs/PROTOCOL.md`](https://github.com/makefu/jura-connect/blob/main/docs/PROTOCOL.md).
+Details:
+- [`docs/PROTOCOL-Z10.md`](docs/PROTOCOL-Z10.md): everything this firmware sends and expects on a Z10.
+- [`docs/upstream/AT-PROTOCOL.md`](docs/upstream/AT-PROTOCOL.md): the frame format and the cipher.
+- [makefu/jura-connect `docs/PROTOCOL.md`](https://github.com/makefu/jura-connect/blob/main/docs/PROTOCOL.md):
+  the most complete description, covering many more machines.
 
 ## Tests
 
@@ -322,6 +338,8 @@ From the repository root:
 
 ```
 g++ -std=c++17 -Wall -Wextra -Werror -Icomponents tests/reply_match_test.cpp -o /tmp/reply-match && /tmp/reply-match
+g++ -std=c++17 -Wall -Wextra tests/jura_protocol_test.cpp -o /tmp/protocol && /tmp/protocol
+g++ -std=c++17 -Wall -Wextra tests/jura_jprf_test.cpp -o /tmp/jprf && /tmp/jprf
 node tests/recipe_test.js
 ```
 
@@ -331,7 +349,9 @@ This project stands on other people's work:
 
 - [harryzz/jura-uart-esphome](https://github.com/harryzz/jura-uart-esphome) (MIT): the original ESPHome
   component.
-  - What came from it: the cipher, the handshake and the packed machine profiles.
+  - What came from it: the cipher, the handshake, the packed machine profiles,
+    [`tools/pack_profiles.py`](tools/pack_profiles.py), two of the [tests](tests) and the notes in
+    [`docs/upstream/`](docs/upstream).
   - [`components/jura_link`](components/jura_link) is a patched copy of commit `23c76ff`.
   - Patches: `@TR:37` session keep-alive, strict reply matching with retries, re-handshake, machine
     settings, maintenance percentage N/A handling, the brew action.
@@ -340,10 +360,13 @@ This project stands on other people's work:
 - [makefu/jura-connect-hass](https://github.com/makefu/jura-connect-hass) (MIT): its brew card was the
   starting point for this one.
 - [AlexxIT/Jura](https://github.com/AlexxIT/Jura) (MIT): the Bluetooth integration whose entity names
-  this firmware keeps, and the source of [`card/EF545.xml`](card/EF545.xml).
+  this firmware keeps. [`profiles/`](profiles) is the content of its `resources.zip`.
 - [Sebbeben/Jura-Smart-Connect-Wifi-pcb-3d-model](https://github.com/Sebbeben/Jura-Smart-Connect-Wifi-pcb-3d-model):
   photos, pinout, KiCad schematic and PCB of the dongle, a 3D-printable case, and a dump of the
-  original firmware. The pinout photo above is from that repository.
+  original firmware. The pinout photo above is from that repository, and
+  [`docs/HARDWARE.md`](docs/HARDWARE.md) describes the circuit from its schematic.
+- [Jutta-Proto](https://github.com/Jutta-Proto) (GPL-3.0): the service-socket pinout and early
+  research on the UART line encoding. No code is copied from it.
 
 ## Disclaimer
 
@@ -356,5 +379,7 @@ experiments. Use at your own risk.
 MIT, see [LICENSE](LICENSE). Third-party parts keep their own terms:
 
 - [`components/jura_link`](components/jura_link): MIT, harryzz.
-- [`card/EF545.xml`](card/EF545.xml): Jura's machine profile, as redistributed by AlexxIT/Jura (MIT).
+- [`tools/pack_profiles.py`](tools/pack_profiles.py), [`docs/upstream/`](docs/upstream),
+  `tests/jura_protocol_test.cpp`, `tests/jura_jprf_test.cpp`: MIT, harryzz.
+- [`profiles/`](profiles): Jura's machine profiles, as redistributed by AlexxIT/Jura (MIT).
 - [`docs/img/dongle-pinout.jpeg`](docs/img/dongle-pinout.jpeg): Sebbeben, used with credit.
