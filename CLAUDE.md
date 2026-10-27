@@ -75,6 +75,9 @@ node tests/recipe_test.js
 
 ## Releases
 
+- **Installs follow `main`:** use `@main` with `refresh: always`. The default `refresh` (1 day) keeps
+  building an older clone after a push. Anything pushed to `main` goes into the next build, so push
+  only what passed the checks.
 - The example YAML uses `@main`.
-- A live install should pin the full commit hash (a short hash does not fetch).
+- **To freeze a build,** pin the full commit hash instead (a short hash does not fetch).
 - Card updates reach browsers only when the dashboard resource URL changes: bump `?v=`.
