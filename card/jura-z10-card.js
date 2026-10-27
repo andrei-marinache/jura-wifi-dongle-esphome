@@ -17,6 +17,8 @@ const LABELS = {
   MILK_FOAM_TEMP: 'Foam temperature', MILK_TEMP: 'Milk temperature', BYPASS: 'Bypass',
   MILK_BREAK: 'Milk break', STROKE: 'Stroke',
 };
+// Status pill, styled like makefu/jura-connect-hass's card; any other state stays grey.
+const PILL_ICON = { ready: 'mdi:check-circle-outline', blocked: 'mdi:alert-circle-outline', off: 'mdi:power', offline: 'mdi:cloud-off-outline' };
 const UNITS = { WATER_AMOUNT: 'ml', BYPASS: 'ml', MILK_AMOUNT: 's', MILK_FOAM_AMOUNT: 's', MILK_BREAK: 's' };
 
 // Preselections on a machine without IntakeF18 (the Z10 has none): J.O.E.'s AppProduct.c
@@ -142,7 +144,12 @@ class JuraZ10Card extends HTMLElement {
     if (!root || !this._hass) return;
     const s = this._hass.states[this._config.status];
     const el = root.getElementById('status');
-    if (el) el.textContent = this._online() ? (s ? s.state : '?') : 'offline';
+    if (el) {
+      const state = this._online() ? (s ? s.state : '') : 'offline';
+      el.className = `pill ${state}`;
+      el.querySelector('ha-icon').setAttribute('icon', PILL_ICON[state] || 'mdi:help-circle-outline');
+      el.querySelector('span').textContent = state ? state[0].toUpperCase() + state.slice(1) : '?';
+    }
     const btn = root.getElementById('brew');
     if (btn) btn.disabled = !this._online() || (!!s && s.state === 'off');   // off = switch-off delay running
   }
@@ -180,9 +187,14 @@ class JuraZ10Card extends HTMLElement {
     root.innerHTML = `
       <style>
         ha-card { padding: 16px; }
-        .head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+        .head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
         .title { font-size: 1.3em; }
-        #status { color: var(--secondary-text-color); }
+        .pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; font-size: 0.85rem;
+                font-weight: 600; color: #fff; background: var(--st, var(--disabled-text-color, #9e9e9e)); }
+        .pill ha-icon { --mdc-icon-size: 18px; }
+        .pill.ready { --st: var(--success-color, #43a047); }
+        .pill.blocked { --st: var(--warning-color, #ff9800); }
+        .pill.off { --st: var(--error-color, #f44336); }
         .grid { display: grid; grid-template-columns: max-content 1fr; gap: 10px 12px; align-items: center; }
         .ctl { display: flex; align-items: center; gap: 8px; min-width: 0; }
         select, input { flex: 1; min-width: 0; font: inherit; color: var(--primary-text-color); }
@@ -199,7 +211,7 @@ class JuraZ10Card extends HTMLElement {
         .msg { margin-top: 4px; color: var(--secondary-text-color); }
       </style>
       <ha-card>
-        <div class="head"><span class="title">${esc(this._config.title)}</span><span id="status"></span></div>
+        <div class="head"><span class="title">${esc(this._config.title)}</span><span id="status" class="pill"><ha-icon></ha-icon><span></span></span></div>
         ${body}
       </ha-card>`;
     this._bind();
