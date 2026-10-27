@@ -18,6 +18,7 @@ const LABELS = {
   MILK_BREAK: 'Milk break', STROKE: 'Stroke',
 };
 // Status pill, styled like makefu/jura-connect-hass's card; any other state stays grey.
+const PILL_TEXT = { blocked: 'Not ready' };
 const PILL_ICON = { ready: 'mdi:check-circle-outline', blocked: 'mdi:alert-circle-outline', off: 'mdi:power', offline: 'mdi:cloud-off-outline' };
 const UNITS = { WATER_AMOUNT: 'ml', BYPASS: 'ml', MILK_AMOUNT: 's', MILK_FOAM_AMOUNT: 's', MILK_BREAK: 's' };
 
@@ -148,10 +149,11 @@ class JuraZ10Card extends HTMLElement {
       const state = this._online() ? (s ? s.state : '') : 'offline';
       el.className = `pill ${state}`;
       el.querySelector('ha-icon').setAttribute('icon', PILL_ICON[state] || 'mdi:help-circle-outline');
-      el.querySelector('span').textContent = state ? state[0].toUpperCase() + state.slice(1) : '?';
+      el.querySelector('span').textContent = PILL_TEXT[state] || (state ? state[0].toUpperCase() + state.slice(1) : '?');
     }
     const btn = root.getElementById('brew');
-    if (btn) btn.disabled = !this._online() || (!!s && s.state === 'off');   // off = switch-off delay running
+    // off = switch-off delay running; blocked = an alert that stops brewing (water tank, drip tray, ...)
+    if (btn) btn.disabled = !this._online() || (!!s && (s.state === 'off' || s.state === 'blocked'));
   }
 
   _render() {
@@ -193,7 +195,7 @@ class JuraZ10Card extends HTMLElement {
                 font-weight: 600; color: #fff; background: var(--st, var(--disabled-text-color, #9e9e9e)); }
         .pill ha-icon { --mdc-icon-size: 18px; }
         .pill.ready { --st: var(--success-color, #43a047); }
-        .pill.blocked { --st: var(--warning-color, #ff9800); }
+        .pill.blocked { --st: var(--yellow-color, #ffeb3b); color: #212121; }
         .pill.off { --st: var(--error-color, #f44336); }
         .grid { display: grid; grid-template-columns: max-content 1fr; gap: 10px 12px; align-items: center; }
         .ctl { display: flex; align-items: center; gap: 8px; min-width: 0; }
