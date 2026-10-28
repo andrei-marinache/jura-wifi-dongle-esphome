@@ -15,9 +15,11 @@ esphome:
 # Based on github://harryzz/jura-uart-esphome@23c76fff5361cdc38e3fb8707aeb32a00d69fefc (tested
 # upstream on an S8 / EF536), patched for the Z10: @TR:37 after the handshake, re-handshake on @t0,
 # strict reply matching with retries, machine settings, brew action.
+# refresh: always fetches the latest main on every build (the default would cache it for a day)
 external_components:
   - source: github://andrei-marinache/jura-wifi-dongle-esphome@main
     components: [jura_link]
+    refresh: always
   # Or from a local clone, with components/ copied next to this file:
   # - source:
   #     type: local

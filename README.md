@@ -197,6 +197,7 @@ The component loads from this repository:
 external_components:
   - source: github://andrei-marinache/jura-wifi-dongle-esphome@main
     components: [jura_link]
+    refresh: always   # fetch the latest main on every build; the default caches it for a day
 ```
 
 The UART runs on GPIO17 (TX → machine) and GPIO16 (RX ← machine), 9600 8N1.
