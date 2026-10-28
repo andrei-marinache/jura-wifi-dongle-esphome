@@ -281,7 +281,8 @@ Parameters marked **test** are not confirmed on a real machine yet:
 | Grind | brewed on a Z10 (1 ground coarse); sent only if you change it, otherwise the machine keeps its own grind |
 | Cold brew | brewed on a Z10 (Cappuccino) |
 | Bypass, Milk break | always sent with the factory value, like the J.O.E. app; not confirmed on a Z10 |
-| Foam / Milk temperature, Stroke | **test**: encoding is a guess; sent only if you change them |
+| Foam temperature | brewed on a Z10 (8 instead of the factory 5 gave hotter foam); sent only if you change it |
+| Milk temperature, Stroke | **test**: encoding is a guess; sent only if you change them |
 | Double, Extra shot, Ground coffee | **test**: encoding from the J.O.E. app, never seen on the wire |
 
 Left untouched, the recipe is exactly what the firmware's own encoder produces. Every test

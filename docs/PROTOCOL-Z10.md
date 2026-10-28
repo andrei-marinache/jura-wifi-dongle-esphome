@@ -193,12 +193,14 @@ it on its own display.
 - here: `F2_H` grind as byte 1 = the item value (`10` … `50` for levels 1 … 5). Level 1 ground
   coarse, so 5 is the fine end. Left at `00`, the machine keeps its own grind for the product.
 - here: cold brew as byte 6 = `80`, on a Cappuccino.
+- here: `F14_1` foam temperature as the high nibble of byte 13. Level 8 instead of the factory 5
+  gave noticeably hotter foam.
 
 **Not verified; marked *test* in the card.**
 
 *Sub-indexed arguments.* The packed profile and jura-connect skip these, and the card sends them
-only when changed. Grind is confirmed (above). For the other two the encoding is still a guess:
-- `F14_1` foam temperature and `F14_2` milk temperature: high and low nibble of byte 13.
+only when changed. Grind and foam temperature are confirmed (above). One is still a guess:
+- `F14_2` milk temperature: the low nibble of byte 13, next to the foam temperature.
 
 *Other unconfirmed parameters:*
 - `F8` stroke (Pot): sent only when changed.

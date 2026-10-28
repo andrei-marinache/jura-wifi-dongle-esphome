@@ -4,10 +4,10 @@
 //
 // Recipe layout (makefu/jura-connect PROTOCOL.md 5.9): byte 0 = product code, parameter
 // F<n> at byte n-1, byte 8 = 01, the rest 00 (= "not set", the machine keeps its own).
-// Brewed on a Z10: F3 strength, F4 water, F5 milk, F6 foam, F7 temperature, F2_H grind and
-// the cold brew option. Everything else is marked "test" in the UI.
+// Brewed on a Z10: F3 strength, F4 water, F5 milk, F6 foam, F7 temperature, F2_H grind,
+// F14_1 foam temperature and the cold brew option. Everything else is marked "test" in the UI.
 
-const VERIFIED = new Set(['F2_H', 'F3', 'F4', 'F5', 'F6', 'F7']);
+const VERIFIED = new Set(['F2_H', 'F3', 'F4', 'F5', 'F6', 'F7', 'F14_1']);
 // Sent at their factory value even when untouched: the firmware's own encoder always did.
 // Grind is not among them: left alone, the machine keeps its own grind for the product.
 const SEND_ALWAYS = new Set(['F3', 'F4', 'F5', 'F6', 'F7', 'F10', 'F11']);
