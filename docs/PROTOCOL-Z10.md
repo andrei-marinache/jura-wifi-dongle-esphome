@@ -192,11 +192,12 @@ it on its own display.
   and F7 temperature;
 - here: `F2_H` grind as byte 1 = the item value (`10` … `50` for levels 1 … 5). Level 1 ground
   coarse, so 5 is the fine end. Left at `00`, the machine keeps its own grind for the product.
-- here: cold brew as byte 6 = `80`, on a Cappuccino.
+- here: the preselections cold brew (byte 6 = `80`, on a Cappuccino), extra shot (byte 7 = `02`)
+  and ground coffee (byte 2 = `00`).
 - here: `F14_1` foam temperature as the high nibble of byte 13. Level 8 instead of the factory 5
   gave noticeably hotter foam.
 
-**Not verified; marked *test* in the card.**
+**Not verified yet:**
 
 *Sub-indexed arguments.* The packed profile and jura-connect skip these, and the card sends them
 only when changed. Grind and foam temperature are confirmed (above). One is still a guess:
@@ -208,8 +209,8 @@ only when changed. Grind and foam temperature are confirmed (above). One is stil
   but never confirmed on a Z10.
 
 *Preselections.* The Z10's profile has no `IntakeF18` capability and no `<MULTIPLE_PRESELECTS>`, so
-the J.O.E. app would use its old encoding, one preselection at a time. Cold brew is confirmed (above);
-the rest is from the app only:
+the J.O.E. app would use its old encoding, one preselection at a time. All but double are confirmed
+(above):
 
 | Preselection | Encoding |
 |---|---|

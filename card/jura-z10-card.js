@@ -5,9 +5,9 @@
 // Recipe layout (makefu/jura-connect PROTOCOL.md 5.9): byte 0 = product code, parameter
 // F<n> at byte n-1, byte 8 = 01, the rest 00 (= "not set", the machine keeps its own).
 // Brewed on a Z10: F3 strength, F4 water, F5 milk, F6 foam, F7 temperature, F2_H grind,
-// F14_1 foam temperature and the cold brew option. Everything else is marked "test" in the UI.
+// F14_1 foam temperature, and the cold brew, extra shot and ground coffee options. Not yet:
+// double, F14_2 milk temperature, F8 stroke, F10 bypass, F11 milk break (README has the table).
 
-const VERIFIED = new Set(['F2_H', 'F3', 'F4', 'F5', 'F6', 'F7', 'F14_1']);
 // Sent at their factory value even when untouched: the firmware's own encoder always did.
 // Grind is not among them: left alone, the machine keeps its own grind for the product.
 const SEND_ALWAYS = new Set(['F3', 'F4', 'F5', 'F6', 'F7', 'F10', 'F11']);
@@ -24,13 +24,12 @@ const PILL_ICON = { ready: 'mdi:check-circle-outline', blocked: 'mdi:alert-circl
 const UNITS = { WATER_AMOUNT: 'ml', BYPASS: 'ml', MILK_AMOUNT: 's', MILK_FOAM_AMOUNT: 's', MILK_BREAK: 's' };
 
 // Preselections on a machine without IntakeF18 (the Z10 has none): J.O.E.'s AppProduct.c
-// swaps in the double product's code or overwrites one byte. Only cold brew has been brewed
-// on a Z10 (Cappuccino); the others are still marked "test". fakesweetfoam has no payload
-// there, so it is not offered.
+// swaps in the double product's code or overwrites one byte. All but double have been brewed
+// on a Z10. fakesweetfoam has no payload there, so it is not offered.
 const PRESELECT = {
   double: { label: 'Double' },
   xtrashot: { label: 'Extra shot', byte: 7, value: 0x02 },
-  coldbrew: { label: 'Cold brew', byte: 6, value: 0x80, hides: ['F7'], tested: true },
+  coldbrew: { label: 'Cold brew', byte: 6, value: 0x80, hides: ['F7'] },
   powder: { label: 'Ground coffee', byte: 2, value: 0x00, hides: ['F3', 'F2_H'] },
 };
 
@@ -168,7 +167,7 @@ class JuraZ10Card extends HTMLElement {
       const p = this._product;
       const hidden = (PRESELECT[this._pre] && PRESELECT[this._pre].hides) || [];
       const rows = p.params.filter((q) => !hidden.includes(q.arg)).map((q) => {
-        const label = `${LABELS[q.tag] || q.tag}${VERIFIED.has(q.arg) ? '' : ' <span class="test">test</span>'}`;
+        const label = LABELS[q.tag] || q.tag;
         const v = this._values[q.arg];
         // Grind 1 was seen to grind coarse on a Z10; 5 is the other end of the scale.
         const itemName = (k) => q.tag === 'GRINDER_FREENESS' && (k === 0 || k === q.items.length - 1)
@@ -179,7 +178,7 @@ class JuraZ10Card extends HTMLElement {
         return `<label>${label}</label><div class="ctl">${control}</div>`;
       }).join('');
       const pre = p.pre.length
-        ? `<label>Option</label><div class="ctl"><select id="pre"><option value="">None</option>${p.pre.map((k) => `<option value="${k}"${k === this._pre ? ' selected' : ''}>${PRESELECT[k].label}${PRESELECT[k].tested ? '' : ' (test)'}</option>`).join('')}</select></div>`
+        ? `<label>Option</label><div class="ctl"><select id="pre"><option value="">None</option>${p.pre.map((k) => `<option value="${k}"${k === this._pre ? ' selected' : ''}>${PRESELECT[k].label}</option>`).join('')}</select></div>`
         : '';
       body = `
         <div class="grid">
@@ -208,7 +207,6 @@ class JuraZ10Card extends HTMLElement {
         select { background: var(--card-background-color); border: 1px solid var(--divider-color); border-radius: 6px; padding: 6px; }
         input[type=range] { accent-color: var(--primary-color); }
         output { min-width: 4.5em; text-align: right; }
-        .test { font-size: 0.75em; color: var(--warning-color, orange); border: 1px solid currentColor; border-radius: 4px; padding: 0 3px; }
         button { margin-top: 16px; width: 100%; padding: 10px; font: inherit; font-weight: 500; border: 0; border-radius: 8px;
                  background: var(--primary-color); color: var(--text-primary-color, #fff); cursor: pointer; }
         button:disabled { opacity: 0.4; cursor: default; }

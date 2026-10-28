@@ -66,11 +66,11 @@ node tests/recipe_test.js
 - **Power-cut detection** arms only after 10 s of a ≥ 4.8 V reading, and needs the GPIO34 divider.
 - **Card recipes:**
   - For an untouched product, the card's recipe must equal the firmware's own `recipe_blob()`.
-  - Parameters outside `SEND_ALWAYS` go out only when the user changes them. `VERIFIED` only
-    decides the *test* label: grind is verified but still sent only when changed.
+  - Parameters outside `SEND_ALWAYS` go out only when the user changes them; grind and foam
+    temperature are confirmed but stay outside, so the machine keeps its own setting by default.
   - `tests/recipe_test.js` pins the Milkcoffee recipe that was brewed on a Z10.
-- **When a *test* parameter is confirmed by a real brew,** update all of these together:
-  - `VERIFIED` in the card;
+- **When a parameter is confirmed by a real brew,** update together:
+  - the header comment of the card;
   - the table in the README;
   - section 8 of `docs/PROTOCOL-Z10.md`.
 

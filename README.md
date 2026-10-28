@@ -273,20 +273,20 @@ entities take over the same entity ids and their history.
 - *Grind* runs from 1 (coarse) to 5 (fine).
 - *Brew* sends one `@TP:` recipe to the dongle. The line under the button shows exactly what will be sent; tap it to copy the recipe.
 
-Parameters marked **test** are not confirmed on a real machine yet:
+What has been confirmed by brewing on a Z10:
 
 | Parameter | Status |
 |---|---|
 | Strength, Water, Milk, Milk foam, Temperature | brewed on a Z10 ([jura-connect](https://github.com/makefu/jura-connect)) |
 | Grind | brewed on a Z10 (1 ground coarse); sent only if you change it, otherwise the machine keeps its own grind |
-| Cold brew | brewed on a Z10 (Cappuccino) |
-| Bypass, Milk break | always sent with the factory value, like the J.O.E. app; not confirmed on a Z10 |
 | Foam temperature | brewed on a Z10 (8 instead of the factory 5 gave hotter foam); sent only if you change it |
-| Milk temperature, Stroke | **test**: encoding is a guess; sent only if you change them |
-| Double, Extra shot, Ground coffee | **test**: encoding from the J.O.E. app, never seen on the wire |
+| Cold brew, Extra shot, Ground coffee | brewed on a Z10 |
+| Bypass, Milk break | always sent with the factory value, like the J.O.E. app; not confirmed on a Z10 yet |
+| Milk temperature, Stroke | not confirmed yet (milk temperature's encoding is a guess); sent only if you change them |
+| Double | not confirmed yet: encoding from the J.O.E. app |
 
-Left untouched, the recipe is exactly what the firmware's own encoder produces. Every test
-parameter you change is a real experiment, and a wrong byte can give a wrong drink.
+Left untouched, the recipe is exactly what the firmware's own encoder produces. Changing a
+parameter that is not confirmed yet is an experiment, and a wrong byte can give a wrong drink.
 
 ### Options
 
@@ -376,8 +376,8 @@ This project stands on other people's work:
 ## Disclaimer
 
 Not affiliated with Jura or TOP-tronic. Flashing the dongle replaces its firmware, and the Jura app
-will no longer connect to it until you restore the backup. Brewing parameters marked *test* are
-experiments. Use at your own risk.
+will no longer connect to it until you restore the backup. Brewing parameters not yet confirmed
+on a Z10 (see the table above) are experiments. Use at your own risk.
 
 ## License
 
