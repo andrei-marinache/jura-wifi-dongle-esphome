@@ -280,10 +280,9 @@ What has been confirmed by brewing on a Z10:
 | Strength, Water, Milk, Milk foam, Temperature | brewed on a Z10 ([jura-connect](https://github.com/makefu/jura-connect)) |
 | Grind | brewed on a Z10 (1 ground coarse); sent only if you change it, otherwise the machine keeps its own grind |
 | Foam temperature | brewed on a Z10 (8 instead of the factory 5 gave hotter foam); sent only if you change it |
-| Cold brew, Extra shot, Ground coffee | brewed on a Z10 |
+| Double, Cold brew, Extra shot, Ground coffee | brewed on a Z10 |
 | Bypass, Milk break | always sent with the factory value, like the J.O.E. app; not confirmed on a Z10 yet |
 | Milk temperature, Stroke | not confirmed yet (milk temperature's encoding is a guess); sent only if you change them |
-| Double | not confirmed yet: encoding from the J.O.E. app |
 
 Left untouched, the recipe is exactly what the firmware's own encoder produces. Changing a
 parameter that is not confirmed yet is an experiment, and a wrong byte can give a wrong drink.

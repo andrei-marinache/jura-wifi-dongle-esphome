@@ -5,8 +5,8 @@
 // Recipe layout (makefu/jura-connect PROTOCOL.md 5.9): byte 0 = product code, parameter
 // F<n> at byte n-1, byte 8 = 01, the rest 00 (= "not set", the machine keeps its own).
 // Brewed on a Z10: F3 strength, F4 water, F5 milk, F6 foam, F7 temperature, F2_H grind,
-// F14_1 foam temperature, and the cold brew, extra shot and ground coffee options. Not yet:
-// double, F14_2 milk temperature, F8 stroke, F10 bypass, F11 milk break (README has the table).
+// F14_1 foam temperature, and all four options (double, cold brew, extra shot, ground coffee).
+// Not yet: F14_2 milk temperature, F8 stroke, F10 bypass, F11 milk break (README has the table).
 
 // Sent at their factory value even when untouched: the firmware's own encoder always did.
 // Grind is not among them: left alone, the machine keeps its own grind for the product.
@@ -24,8 +24,8 @@ const PILL_ICON = { ready: 'mdi:check-circle-outline', blocked: 'mdi:alert-circl
 const UNITS = { WATER_AMOUNT: 'ml', BYPASS: 'ml', MILK_AMOUNT: 's', MILK_FOAM_AMOUNT: 's', MILK_BREAK: 's' };
 
 // Preselections on a machine without IntakeF18 (the Z10 has none): J.O.E.'s AppProduct.c
-// swaps in the double product's code or overwrites one byte. All but double have been brewed
-// on a Z10. fakesweetfoam has no payload there, so it is not offered.
+// swaps in the double product's code or overwrites one byte. All four have been brewed on a
+// Z10. fakesweetfoam has no payload there, so it is not offered.
 const PRESELECT = {
   double: { label: 'Double' },
   xtrashot: { label: 'Extra shot', byte: 7, value: 0x02 },
