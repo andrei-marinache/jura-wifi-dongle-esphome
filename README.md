@@ -270,6 +270,7 @@ entities take over the same entity ids and their history.
 
 - Pick a product, and only that product's parameters show up, set to its factory values.
 - *Option* offers the preselections that product supports: Double, Extra shot, Cold brew, Ground coffee.
+- *Grind* runs from 1 (coarse) to 5 (fine).
 - *Brew* sends one `@TP:` recipe to the dongle. The line under the button shows exactly what will be sent; tap it to copy the recipe.
 
 Parameters marked **test** are not confirmed on a real machine yet:
@@ -277,9 +278,11 @@ Parameters marked **test** are not confirmed on a real machine yet:
 | Parameter | Status |
 |---|---|
 | Strength, Water, Milk, Milk foam, Temperature | brewed on a Z10 ([jura-connect](https://github.com/makefu/jura-connect)) |
+| Grind | brewed on a Z10 (1 ground coarse); sent only if you change it, otherwise the machine keeps its own grind |
+| Cold brew | brewed on a Z10 (Cappuccino) |
 | Bypass, Milk break | always sent with the factory value, like the J.O.E. app; not confirmed on a Z10 |
-| Grind, Foam / Milk temperature, Stroke | **test**: encoding is a guess; sent only if you change them |
-| Double, Extra shot, Cold brew, Ground coffee | **test**: encoding from the J.O.E. app, never seen on the wire |
+| Foam / Milk temperature, Stroke | **test**: encoding is a guess; sent only if you change them |
+| Double, Extra shot, Ground coffee | **test**: encoding from the J.O.E. app, never seen on the wire |
 
 Left untouched, the recipe is exactly what the firmware's own encoder produces. Every test
 parameter you change is a real experiment, and a wrong byte can give a wrong drink.

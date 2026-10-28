@@ -4,12 +4,13 @@
 //
 // Recipe layout (makefu/jura-connect PROTOCOL.md 5.9): byte 0 = product code, parameter
 // F<n> at byte n-1, byte 8 = 01, the rest 00 (= "not set", the machine keeps its own).
-// Brewed on a Z10: F3 strength, F4 water, F5 milk, F6 foam, F7 temperature. Everything
-// else is marked "test" in the UI.
+// Brewed on a Z10: F3 strength, F4 water, F5 milk, F6 foam, F7 temperature, F2_H grind and
+// the cold brew option. Everything else is marked "test" in the UI.
 
-const VERIFIED = new Set(['F3', 'F4', 'F5', 'F6', 'F7']);
+const VERIFIED = new Set(['F2_H', 'F3', 'F4', 'F5', 'F6', 'F7']);
 // Sent at their factory value even when untouched: the firmware's own encoder always did.
-const SEND_ALWAYS = new Set([...VERIFIED, 'F10', 'F11']);
+// Grind is not among them: left alone, the machine keeps its own grind for the product.
+const SEND_ALWAYS = new Set(['F3', 'F4', 'F5', 'F6', 'F7', 'F10', 'F11']);
 
 const LABELS = {
   GRINDER_FREENESS: 'Grind', COFFEE_STRENGTH: 'Strength', WATER_AMOUNT: 'Water',
@@ -23,12 +24,13 @@ const PILL_ICON = { ready: 'mdi:check-circle-outline', blocked: 'mdi:alert-circl
 const UNITS = { WATER_AMOUNT: 'ml', BYPASS: 'ml', MILK_AMOUNT: 's', MILK_FOAM_AMOUNT: 's', MILK_BREAK: 's' };
 
 // Preselections on a machine without IntakeF18 (the Z10 has none): J.O.E.'s AppProduct.c
-// swaps in the double product's code or overwrites one byte. Never seen on a wire.
-// fakesweetfoam has no payload there, so it is not offered.
+// swaps in the double product's code or overwrites one byte. Only cold brew has been brewed
+// on a Z10 (Cappuccino); the others are still marked "test". fakesweetfoam has no payload
+// there, so it is not offered.
 const PRESELECT = {
   double: { label: 'Double' },
   xtrashot: { label: 'Extra shot', byte: 7, value: 0x02 },
-  coldbrew: { label: 'Cold brew', byte: 6, value: 0x80, hides: ['F7'] },
+  coldbrew: { label: 'Cold brew', byte: 6, value: 0x80, hides: ['F7'], tested: true },
   powder: { label: 'Ground coffee', byte: 2, value: 0x00, hides: ['F3', 'F2_H'] },
 };
 
@@ -168,13 +170,16 @@ class JuraZ10Card extends HTMLElement {
       const rows = p.params.filter((q) => !hidden.includes(q.arg)).map((q) => {
         const label = `${LABELS[q.tag] || q.tag}${VERIFIED.has(q.arg) ? '' : ' <span class="test">test</span>'}`;
         const v = this._values[q.arg];
+        // Grind 1 was seen to grind coarse on a Z10; 5 is the other end of the scale.
+        const itemName = (k) => q.tag === 'GRINDER_FREENESS' && (k === 0 || k === q.items.length - 1)
+          ? `${q.items[k].name} (${k === 0 ? 'coarse' : 'fine'})` : q.items[k].name;
         const control = q.items.length
-          ? `<select data-arg="${q.arg}">${q.items.map((i) => `<option value="${i.value}"${i.value === v ? ' selected' : ''}>${esc(i.name)}</option>`).join('')}</select>`
+          ? `<select data-arg="${q.arg}">${q.items.map((i, k) => `<option value="${i.value}"${i.value === v ? ' selected' : ''}>${esc(itemName(k))}</option>`).join('')}</select>`
           : `<input type="range" data-arg="${q.arg}" min="${q.min}" max="${q.max}" step="${q.step}" value="${v}"><output>${v} ${UNITS[q.tag] || ''}</output>`;
         return `<label>${label}</label><div class="ctl">${control}</div>`;
       }).join('');
       const pre = p.pre.length
-        ? `<label>Option <span class="test">test</span></label><div class="ctl"><select id="pre"><option value="">None</option>${p.pre.map((k) => `<option value="${k}"${k === this._pre ? ' selected' : ''}>${PRESELECT[k].label}</option>`).join('')}</select></div>`
+        ? `<label>Option</label><div class="ctl"><select id="pre"><option value="">None</option>${p.pre.map((k) => `<option value="${k}"${k === this._pre ? ' selected' : ''}>${PRESELECT[k].label}${PRESELECT[k].tested ? '' : ' (test)'}</option>`).join('')}</select></div>`
         : '';
       body = `
         <div class="grid">

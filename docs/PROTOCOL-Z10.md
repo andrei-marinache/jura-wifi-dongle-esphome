@@ -186,16 +186,18 @@ it on its own display.
 - Water and bypass are sent in units of 5 ml.
 - Milk and milk foam are sent in seconds, as they are.
 
-**Verified on a Z10** (by jura-connect, by brewing):
-- the Milkcoffee recipe `05000812030202000100000000000000`: strength 8, 90 ml, milk 3 s, foam 2 s,
-  temperature high;
-- the parameters F3 strength, F4 water, F5 milk, F6 milk foam and F7 temperature.
+**Verified on a Z10 by brewing:**
+- by jura-connect: the Milkcoffee recipe `05000812030202000100000000000000` (strength 8, 90 ml,
+  milk 3 s, foam 2 s, temperature high), and with it F3 strength, F4 water, F5 milk, F6 milk foam
+  and F7 temperature;
+- here: `F2_H` grind as byte 1 = the item value (`10` … `50` for levels 1 … 5). Level 1 ground
+  coarse, so 5 is the fine end. Left at `00`, the machine keeps its own grind for the product.
+- here: cold brew as byte 6 = `80`, on a Cappuccino.
 
 **Not verified; marked *test* in the card.**
 
-*Sub-indexed arguments.* The packed profile and jura-connect skip these. This firmware's card sends
-them only when changed, and the encoding is a guess:
-- `F2_H` grind: the item values `10`–`50` look like high-nibble values, so byte 1 = that value.
+*Sub-indexed arguments.* The packed profile and jura-connect skip these, and the card sends them
+only when changed. Grind is confirmed (above). For the other two the encoding is still a guess:
 - `F14_1` foam temperature and `F14_2` milk temperature: high and low nibble of byte 13.
 
 *Other unconfirmed parameters:*
@@ -204,7 +206,8 @@ them only when changed, and the encoding is a guess:
   but never confirmed on a Z10.
 
 *Preselections.* The Z10's profile has no `IntakeF18` capability and no `<MULTIPLE_PRESELECTS>`, so
-the J.O.E. app would use its old encoding, one preselection at a time:
+the J.O.E. app would use its old encoding, one preselection at a time. Cold brew is confirmed (above);
+the rest is from the app only:
 
 | Preselection | Encoding |
 |---|---|
