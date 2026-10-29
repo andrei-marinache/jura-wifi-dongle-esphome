@@ -194,6 +194,9 @@ it on its own display.
   coarse, so 5 is the fine end. Left at `00`, the machine keeps its own grind for the product.
 - here: all four preselections: double (byte 0 = the double product's code), cold brew
   (byte 6 = `80`, on a Cappuccino), extra shot (byte 7 = `02`) and ground coffee (byte 2 = `00`).
+- here: cold brew and extra shot in the same recipe, on a Cappuccino:
+  `0400080C000E80020100000000000000`. The display offers one preselection at a time, but the
+  machine brewed both.
 - here: `F14_1` foam temperature as the high nibble of byte 13. Level 8 instead of the factory 5
   gave noticeably hotter foam.
 
@@ -210,7 +213,8 @@ only when changed. Grind and foam temperature are confirmed (above). One is stil
 
 *Preselections.* The Z10's profile has no `IntakeF18` capability and no `<MULTIPLE_PRESELECTS>`, so
 the J.O.E. app would use its old encoding, one preselection at a time. All four are confirmed
-(above):
+(above). Each writes its own byte, so they can share a recipe; only cold brew + extra shot has been
+brewed that way so far:
 
 | Preselection | Encoding |
 |---|---|

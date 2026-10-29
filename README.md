@@ -269,7 +269,8 @@ entities take over the same entity ids and their history.
 ### How it works
 
 - Pick a product, and only that product's parameters show up, set to its factory values.
-- *Option* offers the preselections that product supports: Double, Extra shot, Cold brew, Ground coffee.
+- *Options* are checkboxes for the preselections that product supports: Double, Extra shot, Cold brew, Ground coffee.
+  Unlike the machine's display, the card lets you tick several at once.
 - *Grind* runs from 1 (coarse) to 5 (fine).
 - *Brew* sends one `@TP:` recipe to the dongle. The line under the button shows exactly what will be sent; tap it to copy the recipe.
 
@@ -280,7 +281,8 @@ What has been confirmed by brewing on a Z10:
 | Strength, Water, Milk, Milk foam, Temperature | brewed on a Z10 ([jura-connect](https://github.com/makefu/jura-connect)) |
 | Grind | brewed on a Z10 (1 ground coarse); sent only if you change it, otherwise the machine keeps its own grind |
 | Foam temperature | brewed on a Z10 (8 instead of the factory 5 gave hotter foam); sent only if you change it |
-| Double, Cold brew, Extra shot, Ground coffee | brewed on a Z10 |
+| Double, Cold brew, Extra shot, Ground coffee | brewed on a Z10, each on its own |
+| Cold brew + Extra shot together | brewed on a Z10 (Cappuccino); other combinations not tried yet |
 | Bypass, Milk break | always sent with the factory value, like the J.O.E. app; not confirmed on a Z10 yet |
 | Milk temperature, Stroke | not confirmed yet (milk temperature's encoding is a guess); sent only if you change them |
 

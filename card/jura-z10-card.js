@@ -5,7 +5,8 @@
 // Recipe layout (makefu/jura-connect PROTOCOL.md 5.9): byte 0 = product code, parameter
 // F<n> at byte n-1, byte 8 = 01, the rest 00 (= "not set", the machine keeps its own).
 // Brewed on a Z10: F3 strength, F4 water, F5 milk, F6 foam, F7 temperature, F2_H grind,
-// F14_1 foam temperature, and all four options (double, cold brew, extra shot, ground coffee).
+// F14_1 foam temperature, all four options (double, cold brew, extra shot, ground coffee),
+// and cold brew + extra shot together on a Cappuccino.
 // Not yet: F14_2 milk temperature, F8 stroke, F10 bypass, F11 milk break (README has the table).
 
 // Sent at their factory value even when untouched: the firmware's own encoder always did.
@@ -25,7 +26,8 @@ const UNITS = { WATER_AMOUNT: 'ml', BYPASS: 'ml', MILK_AMOUNT: 's', MILK_FOAM_AM
 
 // Preselections on a machine without IntakeF18 (the Z10 has none): J.O.E.'s AppProduct.c
 // swaps in the double product's code or overwrites one byte. All four have been brewed on a
-// Z10. fakesweetfoam has no payload there, so it is not offered.
+// Z10. fakesweetfoam has no payload there, so it is not offered. They touch different bytes, so
+// they combine; the machine's display offers one at a time, but cold brew + extra shot brewed fine.
 const PRESELECT = {
   double: { label: 'Double' },
   xtrashot: { label: 'Extra shot', byte: 7, value: 0x02 },
@@ -70,8 +72,8 @@ function parseProfile(text) {
 // _1 = high nibble, _2 = low nibble.
 function buildRecipe(product, values, changed, pre) {
   const b = new Uint8Array(16);
-  const hidden = (PRESELECT[pre] && PRESELECT[pre].hides) || [];
-  b[0] = pre === 'double' ? product.double : product.code;
+  const hidden = [...pre].flatMap((k) => PRESELECT[k].hides || []);
+  b[0] = pre.has('double') ? product.double : product.code;
   b[8] = 0x01;
   for (const p of product.params) {
     const [, n, sub] = p.arg.match(/^F(\d+)(?:_(H|\d))?$/);
@@ -82,7 +84,7 @@ function buildRecipe(product, values, changed, pre) {
     else if (sub === 'H') b[i] |= v;
     else b[i] |= sub === '1' ? v << 4 : v;
   }
-  if (PRESELECT[pre] && PRESELECT[pre].byte !== undefined) b[PRESELECT[pre].byte] = PRESELECT[pre].value;
+  for (const k of pre) if (PRESELECT[k].byte !== undefined) b[PRESELECT[k].byte] = PRESELECT[k].value;
   return [...b].map((x) => x.toString(16).padStart(2, '0')).join('').toUpperCase();
 }
 
@@ -131,7 +133,7 @@ class JuraZ10Card extends HTMLElement {
     this._product = this._products[index];
     this._values = Object.fromEntries(this._product.params.map((p) => [p.arg, p.def]));
     this._changed = new Set();
-    this._pre = '';
+    this._pre = new Set();
     this._message = '';
     this._render();
   }
@@ -165,7 +167,7 @@ class JuraZ10Card extends HTMLElement {
     else if (!this._products) body = '<div class="msg">Loading profile…</div>';
     else {
       const p = this._product;
-      const hidden = (PRESELECT[this._pre] && PRESELECT[this._pre].hides) || [];
+      const hidden = [...this._pre].flatMap((k) => PRESELECT[k].hides || []);
       const rows = p.params.filter((q) => !hidden.includes(q.arg)).map((q) => {
         const label = LABELS[q.tag] || q.tag;
         const v = this._values[q.arg];
@@ -178,7 +180,7 @@ class JuraZ10Card extends HTMLElement {
         return `<label>${label}</label><div class="ctl">${control}</div>`;
       }).join('');
       const pre = p.pre.length
-        ? `<label>Option</label><div class="ctl"><select id="pre"><option value="">None</option>${p.pre.map((k) => `<option value="${k}"${k === this._pre ? ' selected' : ''}>${PRESELECT[k].label}</option>`).join('')}</select></div>`
+        ? `<label>Options</label><div class="ctl opts">${p.pre.map((k) => `<label class="opt"><input type="checkbox" data-pre="${k}"${this._pre.has(k) ? ' checked' : ''}>${PRESELECT[k].label}</label>`).join('')}</div>`
         : '';
       body = `
         <div class="grid">
@@ -206,6 +208,9 @@ class JuraZ10Card extends HTMLElement {
         select, input { flex: 1; min-width: 0; font: inherit; color: var(--primary-text-color); }
         select { background: var(--card-background-color); border: 1px solid var(--divider-color); border-radius: 6px; padding: 6px; }
         input[type=range] { accent-color: var(--primary-color); }
+        .opts { flex-wrap: wrap; gap: 4px 16px; }
+        .opt { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+        .opt input { flex: none; margin: 0; accent-color: var(--primary-color); }
         output { min-width: 4.5em; text-align: right; }
         button { margin-top: 16px; width: 100%; padding: 10px; font: inherit; font-weight: 500; border: 0; border-radius: 8px;
                  background: var(--primary-color); color: var(--text-primary-color, #fff); cursor: pointer; }
@@ -228,7 +233,11 @@ class JuraZ10Card extends HTMLElement {
     const product = root.getElementById('product');
     if (!product) return;
     product.addEventListener('change', (e) => this._select(Number(e.target.value)));
-    root.getElementById('pre')?.addEventListener('change', (e) => { this._pre = e.target.value; this._message = ''; this._render(); });
+    root.querySelectorAll('[data-pre]').forEach((el) => el.addEventListener('change', () => {
+      this._pre[el.checked ? 'add' : 'delete'](el.dataset.pre);
+      this._message = '';
+      this._render();
+    }));
     const hex = root.getElementById('hex');
     const msg = root.querySelector('.msg');
     const say = (t) => { this._message = t; msg.textContent = t; };
